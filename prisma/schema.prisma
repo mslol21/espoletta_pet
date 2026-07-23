@@ -1,0 +1,314 @@
+// Prisma Schema for KonnexyPet White Label SaaS Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// --------------------------------------------------------
+// 1. WHITE-LABEL & TENANT CONFIGURATION
+// --------------------------------------------------------
+
+model TenantConfig {
+  id               String   @id @default("tenant-default")
+  companyName      String   @default("KonnexyPet Petshop & Spa")
+  slug             String   @unique @default("konnexypet")
+  logoUrl          String?  @default("/logo.png")
+  bannerUrl        String?  @default("/banner-hero.jpg")
+  primaryColor     String   @default("#0EA5E9") // Vibrant Cyan/Sky
+  secondaryColor   String   @default("#8B5CF6") // Purple Accent
+  accentColor      String   @default("#F59E0B") // Amber Highlight
+  phone            String   @default("(11) 99999-8888")
+  whatsapp         String   @default("5511999998888")
+  email            String   @default("contato@konnexypet.com.br")
+  address          String   @default("Av. das Nações Unidas, 1234 - Jardins")
+  city             String   @default("São Paulo")
+  state            String   @default("SP")
+  zipCode          String   @default("01234-567")
+  googleMapsUrl    String?  @default("https://maps.google.com")
+  instagramUrl     String?  @default("https://instagram.com/konnexypet")
+  facebookUrl      String?  @default("https://facebook.com/konnexypet")
+  autoReminders    Boolean  @default(true)
+  customMessage    String?  @default("Olá! Seu agendamento no KonnexyPet está confirmado para {data} às {horario}.")
+  
+  // JSON encoded module toggles (BanhoTosa, Hotel, Creche, Loja, Financeiro, etc.)
+  activeModules    String   @default("{\"banhoTosa\":true,\"hotel\":true,\"creche\":true,\"loja\":true,\"agendamento\":true,\"carteiraVacinas\":true,\"estoque\":true,\"financeiro\":true,\"relatorios\":true,\"crm\":true,\"whatsapp\":true}")
+  
+  // JSON encoded operating hours
+  operatingHours   String   @default("{\"seg_fri\":\"08:00 - 19:00\",\"sab\":\"08:00 - 17:00\",\"dom\":\"09:00 - 13:00\"}")
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// --------------------------------------------------------
+// 2. USERS & ROLES
+// --------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  STAFF
+  CLIENT
+}
+
+model User {
+  id           String        @id @default(uuid())
+  name         String
+  email        String        @unique
+  passwordHash String
+  role         UserRole      @default(CLIENT)
+  phone        String
+  cpf          String?
+  address      String?
+  avatarUrl    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  staffProfile StaffProfile?
+  pets         Pet[]
+  appointments Appointment[]
+  orders       Order[]
+}
+
+model StaffProfile {
+  id             String        @id @default(uuid())
+  userId         String        @unique
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialties    String        // JSON array: ["Banho", "Tosa Tesoura", "Hotel", "Creche"]
+  workSchedule   String        // JSON array of working days/times
+  commissionRate Float         @default(15.0) // 15% commission default
+  onVacation     Boolean       @default(false)
+  active         Boolean       @default(true)
+
+  appointments   Appointment[]
+  commissions    CommissionRecord[]
+}
+
+// --------------------------------------------------------
+// 3. PETS & HEALTH RECORDS
+// --------------------------------------------------------
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+model Pet {
+  id           String        @id @default(uuid())
+  tutorId      String
+  tutor        User          @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+  name         String
+  species      String        // Cão, Gato, Coelho, etc.
+  breed        String        // Golden Retriever, Poodle, SRD, etc.
+  gender       Gender
+  ageYears     Int           @default(1)
+  weightKg     Float         @default(5.0)
+  color        String?
+  coatType     String?       // Curto, Longo, Cacheado, Dupla Pelagem
+  photoUrl     String?
+  allergies    String?
+  medications  String?
+  vaccinesJson String?       // JSON: [{name: "V10", date: "2025-01-10", nextDue: "2026-01-10"}]
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  appointments Appointment[]
+  hotelStays   HotelStay[]
+  daycareStays DaycareStay[]
+}
+
+// --------------------------------------------------------
+// 4. SERVICES & APPOINTMENTS (BANHO & TOSA)
+// --------------------------------------------------------
+
+enum ServiceCategory {
+  BANHO_TOSA
+  HOTEL
+  CRECHE
+  OUTROS
+}
+
+model Service {
+  id               String          @id @default(uuid())
+  name             String
+  category         ServiceCategory @default(BANHO_TOSA)
+  description      String
+  basePrice        Float
+  estimatedMinutes Int             @default(60)
+  allowedBreeds    String?         // JSON array or "ALL"
+  active           Boolean         @default(true)
+  imageUrl         String?
+  createdAt        DateTime        @default(now())
+
+  appointments     Appointment[]
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Appointment {
+  id             String            @id @default(uuid())
+  petId          String
+  pet            Pet               @relation(fields: [petId], references: [id], onDelete: Cascade)
+  tutorId        String
+  tutor          User              @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+  staffId        String?
+  staff          StaffProfile?     @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  serviceId      String
+  service        Service           @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  date           String            // YYYY-MM-DD
+  startTime      String            // HH:mm
+  endTime        String            // HH:mm
+  status         AppointmentStatus @default(PENDING)
+  notes          String?
+  groomType      String?           // Máquina, Tesoura, Higiênica, Bebê
+  beforePhotoUrl String?
+  afterPhotoUrl  String?
+  price          Float
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  commission     CommissionRecord?
+  financial      FinancialRecord?
+}
+
+// --------------------------------------------------------
+// 5. HOTEL PET & CRECHE (DAYCARE)
+// --------------------------------------------------------
+
+model HotelStay {
+  id           String   @id @default(uuid())
+  petId        String
+  pet          Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
+  suiteNumber  String
+  checkInDate  String   // YYYY-MM-DD
+  checkOutDate String   // YYYY-MM-DD
+  status       String   @default("RESERVED") // RESERVED, CHECKED_IN, CHECKED_OUT, CANCELLED
+  feedingPlan  String?
+  walkSchedule String?
+  medications  String?
+  occurrences  String?  // JSON array of logged notes
+  photosJson   String?  // JSON array of photo URLs
+  dailyRate    Float
+  totalAmount  Float
+  createdAt    DateTime @default(now())
+}
+
+model DaycareStay {
+  id          String   @id @default(uuid())
+  petId       String
+  pet         Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
+  entryTime   DateTime @default(now())
+  exitTime    DateTime?
+  status      String   @default("PRESENT") // PRESENT, DEPARTED
+  activities  String?  // JSON array of daily activities
+  photosJson  String?  // JSON array
+  notes       String?
+  dailyRate   Float    @default(50.0)
+  createdAt   DateTime @default(now())
+}
+
+// --------------------------------------------------------
+// 6. E-COMMERCE & INVENTORY (LOJA VIRTUAL)
+// --------------------------------------------------------
+
+model ProductCategory {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  products    Product[]
+}
+
+model Product {
+  id               String          @id @default(uuid())
+  categoryId       String
+  category         ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name             String
+  sku              String          @unique
+  price            Float
+  promotionalPrice Float?
+  stockQuantity    Int             @default(10)
+  minStockAlert    Int             @default(3)
+  description      String
+  imagesJson       String          // JSON array of image URLs
+  active           Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+
+  orderItems       OrderItem[]
+  stockMovements   StockMovement[]
+}
+
+model Order {
+  id            String      @id @default(uuid())
+  tutorId       String?
+  tutor         User?       @relation(fields: [tutorId], references: [id], onDelete: SetNull)
+  customerName  String
+  customerPhone String
+  totalAmount   Float
+  status        String      @default("PENDING") // PENDING, PAID, DELIVERED, CANCELLED
+  paymentMethod String      @default("WHATSAPP")
+  createdAt     DateTime    @default(now())
+
+  items         OrderItem[]
+  financial     FinancialRecord?
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int
+  price     Float
+}
+
+model StockMovement {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type      String   // IN, OUT, ADJUSTMENT
+  quantity  Int
+  reason    String
+  createdAt DateTime @default(now())
+}
+
+// --------------------------------------------------------
+// 7. FINANCIALS & COMMISSIONS
+// --------------------------------------------------------
+
+model FinancialRecord {
+  id            String       @id @default(uuid())
+  type          String       // INCOME, EXPENSE
+  category      String       // SERVICO, PRODUTO, HOTEL, CRECHE, COMISSAO, ALUGUEL, MANUTENCAO
+  description   String
+  amount        Float
+  date          String       // YYYY-MM-DD
+  appointmentId String?      @unique
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  orderId       String?      @unique
+  order         Order?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now())
+}
+
+model CommissionRecord {
+  id            String       @id @default(uuid())
+  staffId       String
+  staff         StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  appointmentId String       @unique
+  appointment   Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  amount        Float
+  status        String       @default("PENDING") // PENDING, PAID
+  createdAt     DateTime     @default(now())
+}
